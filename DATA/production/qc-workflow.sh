@@ -20,22 +20,24 @@ OUTPUT_SUFFIX=
 
 add_QC_JSON() {
   if [[ ${2} =~ ^consul://.* ]]; then
+    [[ $EPNSYNCMODE == 1 ]] ||  { echo "Error fetching QC JSON $2: consul server is used for EPNSYNCMODE == 1 only" 1>&2 && exit 1; }
     TMP_FILENAME=$FETCHTMPDIR/$1.$RANDOM.$RANDOM.json
     curl -s -o $TMP_FILENAME "http://${GEN_TOPO_QC_CONSUL_SERVER}:8500/v1/kv/${2/consul:\/\//}?raw"
     if [[ $? != 0 ]]; then
-      echo "Error fetching QC JSON $2"
+      echo "Error fetching QC JSON $2 (3)" 1>&2
       exit 1
     fi
   elif [[ ${2} =~ ^apricot://.* ]]; then
+    [[ $EPNSYNCMODE == 1 ]] || { echo "Error fetching QC JSON $2: apricot server is used for EPNSYNCMODE == 1 only" 1>&2 && exit 1; }
     TMP_FILENAME=$FETCHTMPDIR/$1.$RANDOM.$RANDOM.json
-	if [[ ${2} =~ "?" ]]; then
-		curl -s -o $TMP_FILENAME "${GEN_TOPO_QC_APRICOT_SERVER}/${2/apricot:\/\/o2\//}\&run_type=${RUNTYPE:-}\&beam_type=${BEAMTYPE:-}\&process=true"
-	else
-		curl -s -o $TMP_FILENAME "${GEN_TOPO_QC_APRICOT_SERVER}/${2/apricot:\/\/o2\//}?run_type=${RUNTYPE:-}\&beam_type=${BEAMTYPE:-}\&process=true"
-	fi
-    
+	  if [[ ${2} =~ "?" ]]; then
+		  curl -s -o $TMP_FILENAME "${GEN_TOPO_QC_APRICOT_SERVER}/${2/apricot:\/\/o2\//}\&run_type=${RUNTYPE:-}\&beam_type=${BEAMTYPE:-}\&process=true"
+	  else
+		  curl -s -o $TMP_FILENAME "${GEN_TOPO_QC_APRICOT_SERVER}/${2/apricot:\/\/o2\//}?run_type=${RUNTYPE:-}\&beam_type=${BEAMTYPE:-}\&process=true"
+	  fi
+
     if [[ $? != 0 ]]; then
-      echo "Error fetching QC JSON $2"
+      echo "Error fetching QC JSON $2 (4)" 1>&2
       exit 1
     fi
   else
@@ -50,8 +52,10 @@ add_QC_JSON() {
   OUTPUT_SUFFIX+="-$1"
 }
 
+JSON_TEMP_FILES="()"
+
 QC_CONFIG=
-QC_CONFIG_OVERRIDE=
+: ${QC_CONFIG_OVERRIDE:=} # set to empty string only if not already set externally
 : ${QC_DETECTOR_CONFIG_OVERRIDE:=} # set to empty string only if not already set externally
 if [[ -z ${QC_JSON_FROM_OUTSIDE:-} && ! -z ${GEN_TOPO_QC_JSON_FILE:-} && -f $GEN_TOPO_QC_JSON_FILE ]]; then
   QC_JSON_FROM_OUTSIDE=$GEN_TOPO_QC_JSON_FILE
@@ -188,7 +192,13 @@ elif [[ -z ${QC_JSON_FROM_OUTSIDE:-} ]]; then
     [[ -z "${QC_JSON_FV0:-}" ]] && QC_JSON_FV0=$O2DPG_ROOT/DATA/production/qc-async/fv0.json
     [[ -z "${QC_JSON_FDD:-}" ]] && QC_JSON_FDD=$O2DPG_ROOT/DATA/production/qc-async/fdd.json
     [[ -z "${QC_JSON_MID:-}" ]] && QC_JSON_MID=$O2DPG_ROOT/DATA/production/qc-async/mid.json
-    [[ -z "${QC_JSON_ZDC:-}" ]] && has_processing_step ZDC_RECO && QC_JSON_ZDC=$O2DPG_ROOT/DATA/production/qc-async/zdc.json
+    if [[ -z "${QC_JSON_ZDC:-}" ]] && has_processing_step ZDC_RECO; then
+      if [[ "$BEAMTYPE" == "PbPb" ]]; then
+        QC_JSON_ZDC=$O2DPG_ROOT/DATA/production/qc-async/zdcPbPb.json
+      else
+        QC_JSON_ZDC=$O2DPG_ROOT/DATA/production/qc-async/zdc.json
+      fi
+    fi
     if [[ -z "${QC_JSON_EMC:-}" ]]; then
       if [[ "$BEAMTYPE" == "PbPb" ]]; then
         QC_JSON_EMC=$O2DPG_ROOT/DATA/production/qc-async/emc_PbPb.json
@@ -262,6 +272,70 @@ elif [[ -z ${QC_JSON_FROM_OUTSIDE:-} ]]; then
       if [[ $i == "PRIMVTX" ]] && ! has_detector_reco ITS; then continue; fi
       if [[ $i == "ITSTPC" ]] && ! has_detectors_reco ITS TPC; then continue; fi
       add_QC_JSON GLO_$i ${!DET_JSON_FILE}
+
+      if [[ $i == "ITSTPC" ]]; then
+        LOCAL_FILENAME=${JSON_FILES//*\ /}
+        # replace the input sources depending on the detector compostition and matching detectors
+        ITSTPCMatchQuery="trackITSTPC:GLO/TPCITS/0;trackITSTPCABREFS:GLO/TPCITSAB_REFS/0;trackITSTPCABCLID:GLO/TPCITSAB_CLID/0;trackTPC:TPC/TRACKS;trackTPCClRefs:TPC/CLUSREFS/0;trackITS:ITS/TRACKS/0;trackITSROF:ITS/ITSTrackROF/0;trackITSClIdx:ITS/TRACKCLSID/0;alpparITS:ITS/ALPIDEPARAM/0?lifetime=condition&ccdb-path=ITS/Config/AlpideParam;SVParam:GLO/SVPARAM/0?lifetime=condition&ccdb-path=GLO/Config/SVertexerParam"
+        TRACKSOURCESK0="ITS,TPC,ITS-TPC"
+        if has_processing_step MATCH_SECVTX || has_detector_matching SECVTX; then
+          if [[ $SYNCMODE == 1 ]] || [[ $EPNSYNCMODE == 1 ]]; then
+            HAS_K0_ENABLED=$(jq -r .qc.tasks.MTCITSTPC.taskParameters.doK0QC "${LOCAL_FILENAME}")
+          else
+            HAS_K0_ENABLED=$(jq -r .qc.tasks.GLOMatchTrITSTPC.taskParameters.doK0QC "${LOCAL_FILENAME}")
+          fi
+          if [[ $HAS_K0_ENABLED == "true" ]]; then
+            ITSTPCMatchQuery+=";p2decay3body:GLO/PVTX_3BODYREFS/0;decay3body:GLO/DECAYS3BODY/0;decay3bodyIdx:GLO/DECAYS3BODY_IDX/0;p2cascs:GLO/PVTX_CASCREFS/0;cascs:GLO/CASCS/0;cascsIdx:GLO/CASCS_IDX/0;p2v0s:GLO/PVTX_V0REFS/0;v0s:GLO/V0S/0;v0sIdx:GLO/V0S_IDX/0;pvtx_tref:GLO/PVTX_TRMTCREFS/0;pvtx_trmtc:GLO/PVTX_TRMTC/0;pvtx:GLO/PVTX/0;clusTPCoccmap:TPC/TPCOCCUPANCYMAP/0;clusTPC:TPC/CLUSTERNATIVE;clusTPCshmap:TPC/CLSHAREDMAP/0;trigTPC:TPC/TRIGGERWORDS/0"
+            if has_secvtx_source ITS-TPC-TRD; then
+              ITSTPCMatchQuery+=";trigITSTPCTRD:TRD/TRGREC_ITSTPC/0;trackITSTPCTRD:TRD/MATCH_ITSTPC/0"
+              TRACKSOURCESK0+=",ITS-TPC-TRD"
+            fi
+            if has_secvtx_source ITS-TPC-TOF; then
+              ITSTPCMatchQuery+=";matchITSTPCTOF:TOF/MTC_ITSTPC/0"
+              TRACKSOURCESK0+=",ITS-TPC-TOF"
+            fi
+            if has_secvtx_source ITS-TPC-TRD-TOF; then
+              ITSTPCMatchQuery+=";matchITSTPCTRDTOF:TOF/MTC_ITSTPCTRD/0"
+              TRACKSOURCESK0+=",ITS-TPC-TRD-TOF"
+            fi
+            if has_secvtx_source TPC-TRD; then
+              ITSTPCMatchQuery+=";trigTPCTRD:TRD/TRGREC_TPC/0;trackTPCTRD:TRD/MATCH_TPC/0"
+              TRACKSOURCESK0+=",TPC-TRD"
+            fi
+            if has_secvtx_source TPC-TOF; then
+              ITSTPCMatchQuery+=";matchTPCTOF:TOF/MTC_TPC/0;trackTPCTOF:TOF/TOFTRACKS_TPC/0"
+              TRACKSOURCESK0+=",TPC-TOF"
+            fi
+            if has_secvtx_source TPC-TRD-TOF; then
+              ITSTPCMatchQuery+=";matchTPCTRDTOF/TOF/MTC_TPCTRD/0"
+              TRACKSOURCESK0+=",TPC-TRD-TOF"
+            fi
+            if has_secvtx_source TOF; then
+              ITSTPCMatchQuery+=";tofcluster:TOF/CLUSTERS/0"
+              TRACKSOURCESK0+=",TOF"
+            fi
+            if has_secvtx_source TRD; then
+              TRACKSOURCESK0+=",TRD"
+            fi
+          fi
+          TEMP_FILE=$(mktemp "${GEN_TOPO_WORKDIR:+$GEN_TOPO_WORKDIR/}${i}"_XXXXXXX)
+          if [[ $SYNCMODE == 1 ]] || [[ $EPNSYNCMODE == 1 ]]; then
+            cat "${LOCAL_FILENAME}" | jq "(.dataSamplingPolicies[] | select(.id == \"ITSTPCmSampK0\") | .query) = \"$ITSTPCMatchQuery\" | .qc.tasks.MTCITSTPC.taskParameters.trackSourcesK0 = \"$TRACKSOURCESK0\"" >"$TEMP_FILE"
+          else
+            cat "${LOCAL_FILENAME}" | jq ".qc.tasks.GLOMatchTrITSTPC.dataSource.query = \"$ITSTPCMatchQuery\" | .qc.tasks.GLOMatchTrITSTPC.taskParameters.trackSourcesK0 = \"$TRACKSOURCESK0\"" >"$TEMP_FILE"
+          fi
+        else
+          # we need to force that the K0s part is disabled
+          TEMP_FILE=$(mktemp "${GEN_TOPO_WORKDIR:+$GEN_TOPO_WORKDIR/}${i}"_XXXXXXX)
+          if [[ $SYNCMODE == 1 ]] || [[ $EPNSYNCMODE == 1 ]]; then
+            cat "${LOCAL_FILENAME}" | jq "(.dataSamplingPolicies[] | select(.id == \"ITSTPCmSampK0\") | .query) = \"$ITSTPCMatchQuery\" | .qc.tasks.MTCITSTPC.taskParameters.trackSourcesK0 = \"$TRACKSOURCESK0\" | .qc.tasks.MTCITSTPC.taskParameters.doK0QC = \"false\"" >"$TEMP_FILE"
+          else
+            cat "${LOCAL_FILENAME}" | jq ".qc.tasks.GLOMatchTrITSTPC.dataSource.query = \"$ITSTPCMatchQuery\" | .qc.tasks.GLOMatchTrITSTPC.taskParameters.trackSourcesK0 = \"$TRACKSOURCESK0\" | .qc.tasks.GLOMatchTrITSTPC.taskParameters.doK0QC = \"false\"" >"$TEMP_FILE"
+          fi
+        fi
+        JSON_FILES=${JSON_FILES/$LOCAL_FILENAME/$TEMP_FILE}
+        JSON_TEMP_FILES+=("$TEMP_FILE")
+      fi
     fi
   done
 
@@ -318,6 +392,11 @@ elif [[ -z ${QC_JSON_FROM_OUTSIDE:-} ]]; then
     fi
     MERGED_JSON_FILENAME=$(realpath $MERGED_JSON_FILENAME)
 
+    # Clean up: delete the temporary files after use
+    for tf in "${JSON_TEMP_FILES[@]}"; do
+      rm -f "$tf"
+    done
+
     if [[ "${QC_REDIRECT_MERGER_TO_LOCALHOST:-}" == "1" ]]; then
       sed -i.bak -E 's/( *)"remoteMachine" *: *".*"(,?) *$/\1"remoteMachine": "127.0.0.1"\2/' $MERGED_JSON_FILENAME
       unlink $MERGED_JSON_FILENAME.bak
@@ -356,7 +435,9 @@ if [[ ! -z "${QC_JSON_FROM_OUTSIDE:-}" ]]; then
       QC_CONFIG_PARAM="--local-batch=QC.root"
     fi
   fi
+
   add_W o2-qc "--config json://$QC_JSON_FROM_OUTSIDE ${QC_CONFIG_PARAM} ${QC_CONFIG}"
+
 fi
 
 if [[ ! -z ${GEN_TOPO_QC_JSON_FILE:-} ]]; then

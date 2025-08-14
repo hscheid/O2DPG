@@ -49,6 +49,16 @@ has_detector_matching()
   [[ $WORKFLOW_DETECTORS_MATCHING =~ (^|,)"ALL"(,|$) ]] || [[ $WORKFLOW_DETECTORS_MATCHING =~ (^|,)"$1"(,|$) ]]
 }
 
+has_detector_gpu()
+{
+  has_detector $1 && [[ $WORKFLOW_DETECTORS_GPU =~ (^|,)"$1"(,|$) ]]
+}
+
+has_secvtx_source()
+{
+  [[ $SVERTEXING_SOURCES =~ (^|,)"ALL"(,|$) ]] || [[ $SVERTEXING_SOURCES =~ (^|,)"$1"(,|$) ]]
+}
+
 has_detector_qc()
 {
   has_detector $1 && [[ $WORKFLOW_DETECTORS_QC =~ (^|,)"$1"(,|$) ]]
@@ -130,6 +140,11 @@ has_detectors_ctf()
 has_detectors_flp_processing()
 {
   _check_multiple has_detector_flp_processing "$@"
+}
+
+has_detectors_gpu()
+{
+  _check_multiple has_detector_gpu "$@"
 }
 
 workflow_has_parameters()
@@ -247,19 +262,22 @@ add_W() # Add binarry to workflow command USAGE: add_W [BINARY] [COMMAND_LINE_OP
   WORKFLOW+=$WFADD
 }
 
-if [[ "${GEN_TOPO_DEPLOYMENT_TYPE:-}" == "ALICE_STAGING" ]]; then
-  GEN_TOPO_QC_CONSUL_SERVER=ali-staging.cern.ch
-else
-  GEN_TOPO_QC_CONSUL_SERVER=alio2-cr1-hv-con01.cern.ch
+if [[ ${EPNSYNCMODE:-0} == 1 ]]; then
+  if [[ "${GEN_TOPO_DEPLOYMENT_TYPE:-}" == "ALICE_STAGING" ]]; then
+    GEN_TOPO_QC_CONSUL_SERVER=ali-staging.cern.ch
+  else
+    GEN_TOPO_QC_CONSUL_SERVER=alio2-cr1-hv-con01.cern.ch
+  fi
+  GEN_TOPO_QC_APRICOT_SERVER=`curl -s "http://${GEN_TOPO_QC_CONSUL_SERVER}:8500/v1/kv/o2/runtime/aliecs/vars/apricot_endpoint?raw"`
 fi
-GEN_TOPO_QC_APRICOT_SERVER=`curl -s "http://${GEN_TOPO_QC_CONSUL_SERVER}:8500/v1/kv/o2/runtime/aliecs/vars/apricot_endpoint?raw"`
 
 add_QC_from_consul()
 {
+  [[ ${EPNSYNCMODE:-0} == 1 ]] || { echo "Error fetching QC JSON $1: consul server only set for EPNSYNCMODE == 1 " 1>&2 && exit 1; }
   if [[ ! -z ${GEN_TOPO_QC_JSON_FILE:-} ]]; then
     curl -s -o $GEN_TOPO_QC_JSON_FILE "http://${GEN_TOPO_QC_CONSUL_SERVER}:8500/v1/kv${1}?raw"
     if [[ $? != 0 ]]; then
-      echo "Error fetching QC JSON $1"
+      echo "Error fetching QC JSON $1 (1)" 1>&2
       exit 1
     fi
     QC_CONFIG_ARG="json://${GEN_TOPO_QC_JSON_FILE}"
@@ -271,14 +289,15 @@ add_QC_from_consul()
 
 add_QC_from_apricot()
 {
+  [[ ${EPNSYNCMODE:-0} == 1 ]] || { echo "Error fetching QC JSON $1: apricot server only set for EPNSYNCMODE == 1 " 1>&2 && exit 1; }
   if [[ ! -z ${GEN_TOPO_QC_JSON_FILE:-} ]]; then
-	if [[ ${1} =~ "?" ]]; then
-		curl -s -o $GEN_TOPO_QC_JSON_FILE "${GEN_TOPO_QC_APRICOT_SERVER}/${1}\&process=true"
-	else
-		curl -s -o $GEN_TOPO_QC_JSON_FILE "${GEN_TOPO_QC_APRICOT_SERVER}/${1}?process=true"
-	fi
+    if [[ ${1} =~ "?" ]]; then
+      curl -s -o $GEN_TOPO_QC_JSON_FILE "${GEN_TOPO_QC_APRICOT_SERVER}/${1}\&process=true"
+    else
+      curl -s -o $GEN_TOPO_QC_JSON_FILE "${GEN_TOPO_QC_APRICOT_SERVER}/${1}?process=true"
+    fi
     if [[ $? != 0 ]]; then
-      echo "Error fetching QC JSON $1"
+      echo "Error fetching QC JSON $1 (2)" 1>&2
       exit 1
     fi
     QC_CONFIG_ARG="json://${GEN_TOPO_QC_JSON_FILE}"

@@ -194,7 +194,7 @@ ONGRID=0
 
 JOBTTL=82000
 CPUCORES=8
-PRODSPLIT=1
+PRODSPLIT=${PRODSPLIT:-1}
 # this tells us to continue an existing job --> in this case we don't create a new workdir
 while [ $# -gt 0 ] ; do
     case $1 in
@@ -313,6 +313,17 @@ if [[ "${IS_ALIEN_JOB_SUBMITTER}" ]]; then
   # -) Special singularity / Apptainer image
   [[ ! ${IMAGESPEC} ]] && IMAGESPEC=$(grep "^#JDL_IMAGE=" ${SCRIPT} | sed 's/#JDL_IMAGE=//')
   echo "Found Container Image to be ${IMAGESPEC}"
+
+  # -) Requirements-Spec
+  REQUIRESPEC=$(grep "^#JDL_REQUIRE=" ${SCRIPT} | sed 's/#JDL_REQUIRE=//')
+  if [ ! "${REQUIRESPEC}" ]; then
+    echo "No Requirement setting found; Setting to default"
+    REQUIRESPEC="{member(other.GridPartitions,"${GRIDPARTITION:-multicore_8}")};"
+    echo "Requirement is ${REQUIRESPEC}"
+  fi
+
+  echo "Requirements JDL entry is ${REQUIRESPEC}"
+
   # -) PackageSpec
   [[ ! ${PACKAGESPEC} ]] && PACKAGESPEC=$(grep "^#JDL_PACKAGE=" ${SCRIPT} | sed 's/#JDL_PACKAGE=//')
   echo "Found PackagesSpec to be ${PACKAGESPEC}"
@@ -358,6 +369,8 @@ EOF
   echo "Packages = {"${PACKAGESPEC}"};" >> "${MY_JOBNAMEDATE}.jdl"   # add package spec
   [ $ERROROUTPUTSPEC ] && echo "OutputErrorE = {"${ERROROUTPUTSPEC}"};" >> "${MY_JOBNAMEDATE}.jdl"   # add error output files
   [ $IMAGESPEC ] && echo "DebugTag = {\"${IMAGESPEC}\"};" >> "${MY_JOBNAMEDATE}.jdl"   # use special singularity image to run job
+  # echo "Requirements = {"${REQUIREMENTSSPEC}"} >> "${MY_JOBNAMEDATE}.jdl"
+  [ "$REQUIRESPEC" ] && echo "Requirements = ${REQUIRESPEC}" >> "${MY_JOBNAMEDATE}.jdl"
 
 # "output_arch.zip:output/*@disk=2",
 # "checkpoint*.tar@disk=2"
@@ -370,6 +383,8 @@ EOF
     (
       # assemble all GRID interaction in a single script / transaction
       [ -f "${command_file}" ] && rm ${command_file}
+      echo "user ${MY_USER}" >> ${command_file}
+      echo "whoami" >> ${command_file}
       [ ! "${CONTINUE_WORKDIR}" ] && echo "rmdir ${MY_JOBWORKDIR}" >> ${command_file}    # remove existing job dir
       # echo "mkdir ${MY_BINDIR}" >> ${command_file}                      # create bindir
       echo "mkdir ${MY_JOBPREFIX}" >> ${command_file}                   # create job output prefix
@@ -421,7 +436,7 @@ EOF
       continue
     fi
     let counter=0 # reset counter
-    JOBSTATUS=$(alien.py ps -j ${MY_JOBID} | awk '//{print $4}')
+    JOBSTATUS=$(alien.py ps -j ${MY_JOBID} | awk '//{print $3}')
     # echo -ne "Waiting for jobs to return; Last status ${JOBSTATUS}"
 
     if [ "${JOBSTATUS}" == "D" ]; then
@@ -476,7 +491,24 @@ if [[ ${SINGULARITY} ]]; then
   # it's actually much like the GRID mode --> which is why we set JALIEN_TOKEN_CERT
   set -x
   cp $0 ${WORKDIR}
-  singularity exec -C -B /cvmfs:/cvmfs,${WORKDIR}:/workdir --env JALIEN_TOKEN_CERT="foo" --pwd /workdir /cvmfs/alice.cern.ch/containers/fs/singularity/centos7 $0 \
+
+  # detect architecture (ARM or X86)
+  ARCH=$(uname -i)
+  if [ "$ARCH" == "aarch64" ] || [ "$ARCH" == "x86_64" ]; then
+    echo "Detected hardware architecture : $ARCH"
+  else
+    echo "Invalid architecture ${ARCH} detected. Exiting"
+    exit 1
+  fi
+  if [ "$ARCH" == "aarch64" ]; then
+    ISAARCH64="1"
+  fi
+
+  CONTAINER="/cvmfs/alice.cern.ch/containers/fs/apptainer/compat_el9-${ARCH}"
+  APPTAINER_EXEC="/cvmfs/alice.cern.ch/containers/bin/apptainer/${ARCH}/current/bin/apptainer"
+
+  # we can actually analyse the local JDL to find the package and set it up for the container
+  ${APPTAINER_EXEC} exec -C -B /cvmfs:/cvmfs,${WORKDIR}:/workdir --pwd /workdir -C ${CONTAINER} /workdir/grid_submit.sh \
   ${CONTINUE_WORKDIR:+"-c ${CONTINUE_WORKDIR}"} --local ${O2TAG:+--o2tag ${O2TAG}} --ttl ${JOBTTL} --label ${JOBLABEL:-label} ${MATTERMOSTHOOK:+--mattermost ${MATTERMOSTHOOK}} ${CONTROLSERVER:+--controlserver ${CONTROLSERVER}}
   set +x
   exit $?
@@ -502,7 +534,6 @@ banner "Limits"
 ulimit -a
 
 banner "OS detection"
-lsb_release -a || true
 cat /etc/os-release || true
 cat /etc/redhat-release || true
 

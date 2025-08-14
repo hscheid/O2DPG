@@ -21,7 +21,7 @@ if [[ $RUNNUMBER -lt 544772 ]]; then
   # these runs were using external dictionaries
   : ${RANS_OPT:="--ans-version compat"}
   export RANS_OPT
-fi   
+fi
 echo "RSRUNNUMBER = $RUNNUMBER RANS_OPT = $RANS_OPT"
 
 # IR, duration, B field, detector list
@@ -119,6 +119,15 @@ if [[ $remappingITS == 1 ]] || [[ $remappingMFT == 1 ]]; then
   REMAPPING=$REMAPPING\"
 fi
 
+# generic remapping string
+if [[ -n "$ALIEN_JDL_REMAPPINGS" ]]; then
+  if [[ -n "$REMAPPING" ]]; then
+    REMAPPING="${REMAPPING::-1};$ALIEN_JDL_REMAPPINGS\""
+  else
+    REMAPPING="--condition-remap \"$ALIEN_JDL_REMAPPINGS\""
+  fi
+fi
+
 echo "Remapping = $REMAPPING"
 
 # needed if we need more wf
@@ -126,6 +135,17 @@ export ADD_EXTRA_WORKFLOW=
 
 # other ad-hoc settings for CTF reader
 export ARGS_EXTRA_PROCESS_o2_ctf_reader_workflow+=" --allow-missing-detectors $REMAPPING"
+
+# possibility to only process some TFs
+if [[ ! -z ${ALIEN_JDL_RUN_TIME_SPAN_FILE} ]]; then
+  export ARGS_EXTRA_PROCESS_o2_ctf_reader_workflow+=" --run-time-span-file $ALIEN_JDL_RUN_TIME_SPAN_FILE "
+  # the following option makes sense only if we have the previous
+  if [[ ${ALIEN_JDL_INVERT_IRFRAME_SELECTION} == 1 ]]; then
+    export ARGS_EXTRA_PROCESS_o2_ctf_reader_workflow+=" --invert-irframe-selection "
+  fi
+fi
+
+# other settings
 echo RUN = $RUNNUMBER
 if [[ $RUNNUMBER -ge 521889 ]]; then
   export ARGS_EXTRA_PROCESS_o2_ctf_reader_workflow+=" --its-digits --mft-digits"
@@ -280,13 +300,30 @@ else
   export ENABLE_METRICS=0
 fi
 
+if [ -z ${ALIEN_JDL_LPMANCHOREDPASSNUMBER+x} ]; then
+  export ANCHORED_PASS_NUMBER=$(echo $ALIEN_JDL_LPMPASSNAME | sed 's/^apass//' | cut -c1-1)
+  echo "using ANCHORED_PASS_NUMBER from pass name $ALIEN_JDL_LPMPASSNAME, ANCHORED_PASS_NUMBER=$ANCHORED_PASS_NUMBER"
+else
+  # variable exported, takes precedence over anything else
+  export ANCHORED_PASS_NUMBER=$ALIEN_JDL_LPMANCHOREDPASSNUMBER
+  echo "using ANCHORED_PASS_NUMBER from $ALIEN_JDL_LPMANCHOREDPASSNUMBER defined by JDL, ANCHORED_PASS_NUMBER=$ANCHORED_PASS_NUMBER"
+fi
+
+echo "Checking ANCHORED_PASS_NUMBER"
+if [ -n "$ANCHORED_PASS_NUMBER" ] && [ "$ANCHORED_PASS_NUMBER" -eq "$ANCHORED_PASS_NUMBER" ] 2>/dev/null; then
+  echo "ANCHORED_PASS_NUMBER set to $ANCHORED_PASS_NUMBER"
+else
+  echo "[Warning] undetermined ANCHORED_PASS_NUMBER"
+fi
+
+
 #ALIGNLEVEL=0: before December 2022 alignment, 1: after December 2022 alignment
 ALIGNLEVEL=1
 if [[ "0$OLDVERSION" == "01" ]] && [[ $BEAMTYPE == "PbPb" || $PERIOD == "MAY" || $PERIOD == "JUN" || $PERIOD == "LHC22c" || $PERIOD == "LHC22d" || $PERIOD == "LHC22e" || $PERIOD == "LHC22f" ]]; then
   ALIGNLEVEL=0
   if [[ $ALIEN_JDL_LPMPRODUCTIONTYPE == "MC" ]]; then
     # extract pass number
-    ANCHORED_PASS=$ALIEN_JDL_LPMANCHOREPASSNAME
+    ANCHORED_PASS=$ALIEN_JDL_LPMANCHOREDPASSNAME
     ANCHORED_PASS_NUMBER=`echo $ANCHORED_PASS | sed 's/^apass//'`
     echo "ANCHORED_PASS_NUMER = $ANCHORED_PASS_NUMBER"
     if [[ $PERIOD == "MAY" || $PERIOD == "JUN" ]] && [[ $ANCHORED_PASS_NUMBER -gt 1 ]]; then
@@ -310,8 +347,8 @@ elif [[ $ALIGNLEVEL == 1 ]]; then
   ERROB="100e-8"
   [[ -z $TPCITSTIMEERR ]] && TPCITSTIMEERR="0.2"
   [[ -z $ITS_CONFIG || "$ITS_CONFIG" != *"--tracking-mode"* ]] && export ITS_CONFIG+=" --tracking-mode async"
-  [[ $ALIEN_JDL_LPMANCHORYEAR == "2023" ]] && [[ $BEAMTYPE == "PbPb" ]] && CUT_MATCH_CHI2=80 || CUT_MATCH_CHI2=100
-  if [[ $ALIEN_JDL_LPMANCHORYEAR == "2023" && $BEAMTYPE == "PbPb" ]] || [[ $PERIOD == "LHC24al" ]] ; then
+  if [[ $ALIEN_JDL_LPMANCHORYEAR == "2023" && $BEAMTYPE == "PbPb" && $ANCHORED_PASS_NUMBER -lt 5 ]] || [[ $PERIOD == "LHC24al" ]] ; then
+    [[ $ALIEN_JDL_LPMANCHORYEAR == "2023" ]] && [[ $BEAMTYPE == "PbPb" ]] && CUT_MATCH_CHI2=80 || CUT_MATCH_CHI2=100
     export ITSTPCMATCH="tpcitsMatch.safeMarginTimeCorrErr=2.;tpcitsMatch.XMatchingRef=60.;tpcitsMatch.cutMatchingChi2=$CUT_MATCH_CHI2;;tpcitsMatch.crudeAbsDiffCut[0]=6;tpcitsMatch.crudeAbsDiffCut[1]=6;tpcitsMatch.crudeAbsDiffCut[2]=0.3;tpcitsMatch.crudeAbsDiffCut[3]=0.3;tpcitsMatch.crudeAbsDiffCut[4]=2.5;tpcitsMatch.crudeNSigma2Cut[0]=64;tpcitsMatch.crudeNSigma2Cut[1]=64;tpcitsMatch.crudeNSigma2Cut[2]=64;tpcitsMatch.crudeNSigma2Cut[3]=64;tpcitsMatch.crudeNSigma2Cut[4]=64;"
     export ITSTPCMATCH="${ITSTPCMATCH};tpcitsMatch.askMinTPCRow[0]=20;tpcitsMatch.askMinTPCRow[1]=20;tpcitsMatch.askMinTPCRow[2]=20;tpcitsMatch.askMinTPCRow[3]=20;tpcitsMatch.askMinTPCRow[4]=20;tpcitsMatch.askMinTPCRow[5]=20;tpcitsMatch.askMinTPCRow[6]=20;tpcitsMatch.askMinTPCRow[7]=20;tpcitsMatch.askMinTPCRow[8]=20;tpcitsMatch.askMinTPCRow[9]=20;tpcitsMatch.askMinTPCRow[10]=20;tpcitsMatch.askMinTPCRow[12]=20;tpcitsMatch.askMinTPCRow[13]=20;tpcitsMatch.askMinTPCRow[14]=20;"
     export ITSTPCMATCH="${ITSTPCMATCH};tpcitsMatch.askMinTPCRow[15]=20;tpcitsMatch.askMinTPCRow[16]=20;tpcitsMatch.askMinTPCRow[17]=20;tpcitsMatch.askMinTPCRow[18]=20;tpcitsMatch.askMinTPCRow[19]=20;tpcitsMatch.askMinTPCRow[20]=20;tpcitsMatch.askMinTPCRow[21]=20;tpcitsMatch.askMinTPCRow[22]=20;tpcitsMatch.askMinTPCRow[23]=20;tpcitsMatch.askMinTPCRow[24]=20;tpcitsMatch.askMinTPCRow[25]=20;tpcitsMatch.askMinTPCRow[26]=20;tpcitsMatch.askMinTPCRow[27]=20;tpcitsMatch.askMinTPCRow[28]=20;tpcitsMatch.askMinTPCRow[29]=20;"
@@ -328,10 +365,37 @@ elif [[ $ALIGNLEVEL == 1 ]]; then
       done
     fi
     [[ $APPLYS11 == 1 ]] && export ITSTPCMATCH="${ITSTPCMATCH};tpcitsMatch.askMinTPCRow[11]=78;" || export ITSTPCMATCH="${ITSTPCMATCH};tpcitsMatch.askMinTPCRow[11]=20;"
+  elif [[ $BEAMTYPE == "PbPb" && ( ( $ALIEN_JDL_LPMANCHORYEAR == "2023" && $ANCHORED_PASS_NUMBER -gt 4 ) || ( $ALIEN_JDL_LPMANCHORYEAR == "2024" && $ANCHORED_PASS_NUMBER -gt 1 )  ) ]] ; then
+    export ITSTPCMATCH="${ITSTPCMATCH};tpcitsMatch.askMinTPCRow[0]=78;tpcitsMatch.askMinTPCRow[1]=78;tpcitsMatch.askMinTPCRow[2]=78;tpcitsMatch.askMinTPCRow[3]=78;tpcitsMatch.askMinTPCRow[4]=78;tpcitsMatch.askMinTPCRow[5]=78;tpcitsMatch.askMinTPCRow[6]=78;tpcitsMatch.askMinTPCRow[7]=78;tpcitsMatch.askMinTPCRow[8]=78;tpcitsMatch.askMinTPCRow[9]=78;tpcitsMatch.askMinTPCRow[10]=78;tpcitsMatch.askMinTPCRow[11]=78;tpcitsMatch.askMinTPCRow[12]=78;tpcitsMatch.askMinTPCRow[13]=78;tpcitsMatch.askMinTPCRow[14]=78;tpcitsMatch.askMinTPCRow[15]=78;tpcitsMatch.askMinTPCRow[16]=78;tpcitsMatch.askMinTPCRow[17]=78;tpcitsMatch.askMinTPCRow[18]=78;tpcitsMatch.askMinTPCRow[19]=78;tpcitsMatch.askMinTPCRow[20]=78;tpcitsMatch.askMinTPCRow[21]=78;tpcitsMatch.askMinTPCRow[22]=78;tpcitsMatch.askMinTPCRow[23]=78;tpcitsMatch.askMinTPCRow[24]=78;tpcitsMatch.askMinTPCRow[25]=78;tpcitsMatch.askMinTPCRow[26]=78;tpcitsMatch.askMinTPCRow[27]=78;tpcitsMatch.askMinTPCRow[28]=78;tpcitsMatch.askMinTPCRow[29]=78;tpcitsMatch.askMinTPCRow[30]=78;tpcitsMatch.askMinTPCRow[31]=78;tpcitsMatch.askMinTPCRow[32]=78;tpcitsMatch.askMinTPCRow[33]=78;tpcitsMatch.askMinTPCRow[34]=78;tpcitsMatch.askMinTPCRow[35]=78;"
+  elif [[ $BEAMTYPE == "pp" ]] ; then
+    export ITSTPCMATCH="${ITSTPCMATCH};tpcitsMatch.askMinTPCRow[0]=78;tpcitsMatch.askMinTPCRow[1]=78;tpcitsMatch.askMinTPCRow[2]=78;tpcitsMatch.askMinTPCRow[3]=78;tpcitsMatch.askMinTPCRow[4]=78;tpcitsMatch.askMinTPCRow[5]=78;tpcitsMatch.askMinTPCRow[6]=78;tpcitsMatch.askMinTPCRow[7]=78;tpcitsMatch.askMinTPCRow[8]=78;tpcitsMatch.askMinTPCRow[9]=78;tpcitsMatch.askMinTPCRow[10]=78;tpcitsMatch.askMinTPCRow[11]=78;tpcitsMatch.askMinTPCRow[12]=78;tpcitsMatch.askMinTPCRow[13]=78;tpcitsMatch.askMinTPCRow[14]=78;tpcitsMatch.askMinTPCRow[15]=78;tpcitsMatch.askMinTPCRow[16]=78;tpcitsMatch.askMinTPCRow[17]=78;tpcitsMatch.askMinTPCRow[18]=78;tpcitsMatch.askMinTPCRow[19]=78;tpcitsMatch.askMinTPCRow[20]=78;tpcitsMatch.askMinTPCRow[21]=78;tpcitsMatch.askMinTPCRow[22]=78;tpcitsMatch.askMinTPCRow[23]=78;tpcitsMatch.askMinTPCRow[24]=78;tpcitsMatch.askMinTPCRow[25]=78;tpcitsMatch.askMinTPCRow[26]=78;tpcitsMatch.askMinTPCRow[27]=78;tpcitsMatch.askMinTPCRow[28]=78;tpcitsMatch.askMinTPCRow[29]=78;tpcitsMatch.askMinTPCRow[30]=78;tpcitsMatch.askMinTPCRow[31]=78;tpcitsMatch.askMinTPCRow[32]=78;tpcitsMatch.askMinTPCRow[33]=78;tpcitsMatch.askMinTPCRow[34]=78;tpcitsMatch.askMinTPCRow[35]=78;"
   fi
-  # settings to improve inner pad-rows contribution
-  export CONFIG_EXTRA_PROCESS_o2_gpu_reco_workflow+=";GPU_rec_tpc.trackletMinSharedNormFactor=1.;GPU_rec_tpc.trackletMaxSharedFraction=0.3;GPU_rec_tpc.globalTrackingRowRange=100;"
   
+  
+  # settings to improve inner pad-rows contribution
+  export CONFIG_EXTRA_PROCESS_o2_gpu_reco_workflow+=";GPU_rec_tpc.trackletMinSharedNormFactor=1.;GPU_rec_tpc.trackletMaxSharedFraction=0.3;GPU_rec_tpc.rejectIFCLowRadiusCluster=1;"
+  if grep extrapolationTrackingRowRange $O2_ROOT/include/GPU/GPUSettingsList.h &> /dev/null ; then
+    export CONFIG_EXTRA_PROCESS_o2_gpu_reco_workflow+="GPU_rec_tpc.extrapolationTrackingRowRange=100;"
+  else
+    export CONFIG_EXTRA_PROCESS_o2_gpu_reco_workflow+="GPU_rec_tpc.globalTrackingRowRange=100;"
+  fi
+
+  if [[ -n "$ALIEN_JDL_TPCDEDXCLMASK" ]]; then
+    CONFIG_EXTRA_PROCESS_o2_gpu_reco_workflow+="GPU_rec_tpc.dEdxClusterRejectionFlagMask=$ALIEN_JDL_TPCDEDXCLMASK;"
+  fi
+
+  if [[ -n "$ALIEN_JDL_TPCDEDXCLMASKALT" ]]; then
+    CONFIG_EXTRA_PROCESS_o2_gpu_reco_workflow+="GPU_rec_tpc.dEdxClusterRejectionFlagMaskAlt=$ALIEN_JDL_TPCDEDXCLMASKALT;"
+  fi
+
+  if [[ -n "$ALIEN_JDL_TPCEDGETWOPADS" ]]; then
+    CONFIG_EXTRA_PROCESS_o2_gpu_reco_workflow+="GPU_rec_tpc.cfEdgeTwoPads=$ALIEN_JDL_TPCEDGETWOPADS"
+  fi
+
+  if [[ -n "$ALIEN_JDL_TPCCLUSTERFILTER" ]]; then
+    CONFIG_EXTRA_PROCESS_o2_gpu_reco_workflow+="GPU_proc.tpcUseOldCPUDecoding=1;GPU_proc.tpcApplyClusterFilterOnCPU=$ALIEN_JDL_TPCCLUSTERFILTER;"
+  fi
+
   #-------------------------------------- TPC corrections -----------------------------------------------
   # we need to provide to TPC
   # 1) interaction rate info (lumi) used for scaling or errors and possible of the corrections : INST_IR_FOR_TPC
@@ -358,7 +422,7 @@ elif [[ $ALIGNLEVEL == 1 ]]; then
 
   DISABLE_CORRECTIONS=
   [[ -n "$ALIEN_JDL_MSHAPECORRECTION" && $ALIEN_JDL_MSHAPECORRECTION == "0" ]] && ENABLE_MSHAPE=0 || ENABLE_MSHAPE=1
-  
+
   if [[ -n $MEAN_IR_FOR_TPC ]] ; then  # firs check if corrections were not disabled via MEAN_IR_FOR_TPC
     if [[ $MEAN_IR_FOR_TPC -gt 0 ]] ; then # positive value overrides map mean lumi
       echo "Applying externally provided map mean IR for scaling, $MEAN_IR_FOR_TPC Hz"
@@ -371,7 +435,7 @@ elif [[ $ALIGNLEVEL == 1 ]]; then
       DISABLE_CORRECTIONS=1
     else
       echo "Did not recognize MEAN_IR_FOR_TPC = $MEAN_IR_FOR_TPC"
-      return 1	
+      return 1
     fi
   fi # MEAN_IR_FOR_TPC overridden
 
@@ -397,7 +461,7 @@ elif [[ $ALIGNLEVEL == 1 ]]; then
     if [[ $TPC_SCALING_SOURCE == "NO_SCALING" ]]; then
       echo "NO SCALING is requested: only TPC/Calib/CorrectionMapsV2... will be applied"
       export TPC_CORR_SCALING+=" --lumi-type 0 "
-    elif [[ $TPC_SCALING_SOURCE == "CTP" ]]; then 
+    elif [[ $TPC_SCALING_SOURCE == "CTP" ]]; then
       echo "CTP Lumi from data will be used for TPC scaling"
       export TPC_CORR_SCALING+=" --lumi-type 1 "
     elif [[ $TPC_SCALING_SOURCE == "IDCCCDB" ]]; then
@@ -415,12 +479,12 @@ elif [[ $ALIGNLEVEL == 1 ]]; then
     echo "CTP is not in the list of detectors, disabling CTP Lumi input request"
     export TPC_CORR_SCALING+=" --disable-ctp-lumi-request "
   fi
-  
+
   if [[ $ENABLE_MSHAPE == "1" ]]; then
     export TPC_CORR_SCALING+=" --enable-M-shape-correction "
   fi
-    
-  if [[ $ALIEN_JDL_LPMANCHORYEAR == "2023" ]] && [[ $BEAMTYPE == "PbPb" ]] ; then
+
+  if [[ $ALIEN_JDL_LPMANCHORYEAR -ge 2023 ]] && [[ $BEAMTYPE == "PbPb" ]] ; then
     # adding additional cluster errors
     # the values below should be squared, but the validation of those values (0.01 and 0.0225) is ongoing
     TPCEXTRAERR=";GPU_rec_tpc.clusterError2AdditionalYSeeding=0.1;GPU_rec_tpc.clusterError2AdditionalZSeeding=0.15;"
@@ -463,12 +527,16 @@ export ITSEXTRAERR="ITSCATrackerParam.sysErrY2[0]=$ERRIB;ITSCATrackerParam.sysEr
 # ad-hoc options for ITS reco workflow
 EXTRA_ITSRECO_CONFIG=
 if [[ $BEAMTYPE == "PbPb" ]]; then
-  EXTRA_ITSRECO_CONFIG="ITSCATrackerParam.deltaRof=1;ITSVertexerParam.clusterContributorsCut=16;ITSVertexerParam.lowMultBeamDistCut=0;ITSCATrackerParam.nROFsPerIterations=12;ITSCATrackerParam.perPrimaryVertexProcessing=true;"
+  EXTRA_ITSRECO_CONFIG="ITSCATrackerParam.deltaRof=0;ITSVertexerParam.clusterContributorsCut=16;ITSVertexerParam.lowMultBeamDistCut=0;ITSCATrackerParam.nROFsPerIterations=12;ITSCATrackerParam.perPrimaryVertexProcessing=false;ITSCATrackerParam.fataliseUponFailure=false;ITSCATrackerParam.dropTFUponFailure=true"
   if [[ -z "$ALIEN_JDL_DISABLE_UPC" || $ALIEN_JDL_DISABLE_UPC != 1 ]]; then
     EXTRA_ITSRECO_CONFIG+=";ITSVertexerParam.nIterations=2;ITSCATrackerParam.doUPCIteration=true;"
   fi
 elif [[ $BEAMTYPE == "pp" ]]; then
   EXTRA_ITSRECO_CONFIG="ITSVertexerParam.phiCut=0.5;ITSVertexerParam.clusterContributorsCut=3;ITSVertexerParam.tanLambdaCut=0.2;"
+  EXTRA_ITSRECO_CONFIG+=";ITSCATrackerParam.startLayerMask[0]=127;ITSCATrackerParam.startLayerMask[1]=127;ITSCATrackerParam.startLayerMask[2]=127;"
+  EXTRA_ITSRECO_CONFIG+=";ITSCATrackerParam.minPtIterLgt[0]=0.05;ITSCATrackerParam.minPtIterLgt[1]=0.05;ITSCATrackerParam.minPtIterLgt[2]=0.05;ITSCATrackerParam.minPtIterLgt[3]=0.05;ITSCATrackerParam.minPtIterLgt[4]=0.05;ITSCATrackerParam.minPtIterLgt[5]=0.05;ITSCATrackerParam.minPtIterLgt[6]=0.05;ITSCATrackerParam.minPtIterLgt[7]=0.05;ITSCATrackerParam.minPtIterLgt[8]=0.05;ITSCATrackerParam.minPtIterLgt[9]=0.09;ITSCATrackerParam.minPtIterLgt[10]=0.167;ITSCATrackerParam.minPtIterLgt[11]=0.125;"
+#  this is to impose old pp pT cuts (overriding hardcoded pbpb24 apass1 settings)
+#  EXTRA_ITSRECO_CONFIG+=";ITSCATrackerParam.minPtIterLgt[0]=0.05;ITSCATrackerParam.minPtIterLgt[1]=0.05;ITSCATrackerParam.minPtIterLgt[2]=0.05;ITSCATrackerParam.minPtIterLgt[3]=0.05;ITSCATrackerParam.minPtIterLgt[4]=0.05;ITSCATrackerParam.minPtIterLgt[5]=0.05;ITSCATrackerParam.minPtIterLgt[6]=0.05;ITSCATrackerParam.minPtIterLgt[7]=0.05;ITSCATrackerParam.minPtIterLgt[8]=0.05;ITSCATrackerParam.minPtIterLgt[9]=0.05;ITSCATrackerParam.minPtIterLgt[10]=0.05;ITSCATrackerParam.minPtIterLgt[11]=0.05;"
 fi
 export CONFIG_EXTRA_PROCESS_o2_its_reco_workflow+=";$MAXBCDIFFTOMASKBIAS_ITS;$MAXBCDIFFTOSQUASHBIAS_ITS;$EXTRA_ITSRECO_CONFIG;"
 
@@ -479,9 +547,7 @@ fi
 
 # ad-hoc options for GPU reco workflow
 export CONFIG_EXTRA_PROCESS_o2_gpu_reco_workflow+=";GPU_global.dEdxDisableResidualGainMap=1;$TRACKTUNETPC;$VDRIFTPARAMOPTION;"
-if [[ $ALIEN_JDL_LPMPRODUCTIONTYPE == "MC" ]]; then
-  export CONFIG_EXTRA_PROCESS_o2_gpu_reco_workflow+=";GPU_global.dEdxDisableResidualGain=1"
-fi
+
 [[ ! -z $TPCCLUSTERTIMESHIFT ]] && [[ $ALIEN_JDL_LPMPRODUCTIONTYPE != "MC" ]] && export CONFIG_EXTRA_PROCESS_o2_gpu_reco_workflow+=";GPU_rec_tpc.clustersShiftTimebins=$TPCCLUSTERTIMESHIFT;"
 
 # ad-hoc settings for TOF reco
@@ -566,6 +632,19 @@ fi
 if [[ $BEAMTYPE == "pp" ]]; then
   export CONFIG_EXTRA_PROCESS_o2_mch_reco_workflow+=";MCHTracking.chamberResolutionX=0.4;MCHTracking.chamberResolutionY=0.4;MCHTracking.sigmaCutForTracking=7;MCHTracking.sigmaCutForImprovement=6"
 fi
+
+# ad-hoc settings for MFT-MCH matching
+# Number of MFT-MCH matching candidates to be stored in AO2Ds
+# Setting MUON_MATCHING_NCANDIDATES=0 disables the storage of multiple candidates
+if [[ -z "${MUON_MATCHING_NCANDIDATES:-}" ]]; then
+  MUON_MATCHING_NCANDIDATES=0 # disable the saving of nCandidated by default
+  if [[ $BEAMTYPE == "pp" ]]; then MUON_MATCHING_NCANDIDATES=5; fi
+  if [[ $BEAMTYPE == "PbPb" ]]; then MUON_MATCHING_NCANDIDATES=20; fi
+fi
+if [[ "x${MUON_MATCHING_NCANDIDATES}" != "x0" ]]; then
+    export CONFIG_EXTRA_PROCESS_o2_globalfwd_matcher_workflow+=";FwdMatching.saveMode=3;FwdMatching.nCandidates=${MUON_MATCHING_NCANDIDATES};"
+fi
+
 
 # possibly adding calib steps as done online
 # could be done better, so that more could be enabled in one go
@@ -701,7 +780,10 @@ fi
 if [[ $ALIEN_JDL_QCOFF != "1" ]]; then
   export WORKFLOW_PARAMETERS="QC,${WORKFLOW_PARAMETERS}"
 fi
-export QC_CONFIG_PARAM="--local-batch=QC.root --override-values \"qc.config.Activity.number=$RUNNUMBER;qc.config.Activity.passName=$PASS;qc.config.Activity.periodName=$PERIOD\""
+
+export QC_CONFIG_OVERRIDE+=";qc.config.Activity.number=$RUNNUMBER;qc.config.Activity.type=PHYSICS;qc.config.Activity.passName=$PASS;qc.config.Activity.periodName=$PERIOD;qc.config.Activity.beamType=$BEAMTYPE;"
+
+export QC_CONFIG_PARAM+=" --local-batch=QC.root "
 export GEN_TOPO_WORKDIR="./"
 #export QC_JSON_FROM_OUTSIDE="QC-20211214.json"
 

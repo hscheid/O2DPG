@@ -45,7 +45,15 @@ public:
       case 7: // generate prompt charmonia cocktail at forward rapidity at 5TeV
         mGeneratorParam = (Generator*)GeneratorCocktailPromptCharmoniaToMuonEvtGen_PbPb5TeV(); 
         break;
-
+      case 8: // generate prompt X_1(3872) to Jpsi pi pi at midrapidity
+        mGeneratorParam = (Generator*)GeneratorParamX3872ToJpsiEvtGen_pp13TeV("9920443");
+        break;
+      case 9: // generate prompt psi2S to Jpsi pi pi at midrapidity
+        mGeneratorParam = (Generator*)GeneratorParamPromptPsiToJpsiPiPiEvtGen_pp13TeV("100443");
+        break;
+      case 10: // generate cocktail of prompt X_1(3872) and psi2S to Jpsi pi pi at midrapidity
+        mGeneratorParam = (Generator*)GeneratorCocktailX3872AndPsi2StoJpsi_pp13TeV();
+        break; 
       }
     mGeneratorParam->Init();  
   }

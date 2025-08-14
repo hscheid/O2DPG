@@ -67,7 +67,8 @@
           "cutMaxpTPC": "20.",
           "cutMinpTPCMIPs": "0.45",
           "cutMaxpTPCMIPs": "0.55",
-          "turnOffHistosForAsync": "true"
+          "turnOffHistosForAsync": "true",
+          "getdEdxVspHypoHist": "true"
        }
       },
       "TPCTrackClusters": {
@@ -96,7 +97,7 @@
         "moduleName": "QcTPC",
         "detectorName": "TPC",
         "cycleDurationSeconds": "300",
-        "movingWindows" : [ "h2DNClustersEta" ],
+        "movingWindows" : [ "h2DNClustersEta","hDCArVsEtaPos", "hDCArVsEtaNeg","hDCArVsEtaPos_pTmin","hDCArVsEtaNeg_pTmin" ],
         "dataSource": {
           "type": "dataSamplingPolicy",
           "name": "tpc-tracks",

@@ -3,13 +3,12 @@
 #include "Pythia8/Pythia.h"
 #include "TRandom.h"
 
-R__ADD_INCLUDE_PATH($O2DPG_ROOT/MC/config/PWGDQ/EvtGen)
+R__ADD_INCLUDE_PATH($O2DPG_MC_CONFIG_ROOT/MC/config/PWGDQ/EvtGen)
 #include "GeneratorEvtGen.C"
 
 #include <string>
 
 using namespace o2::eventgen;
-using namespace Pythia8;
 
 namespace o2
 {
@@ -26,7 +25,7 @@ public:
     mInverseTriggerRatio = inputTriggerRatio; 
     // define minimum bias event generator
     auto seed = (gRandom->TRandom::GetSeed() % 900000000);
-    TString pathconfigMB = gSystem->ExpandPathName("$O2DPG_ROOT/MC/config/PWGDQ/pythia8/generator/pythia8_inel_triggerGap.cfg");
+    TString pathconfigMB = gSystem->ExpandPathName("${O2DPG_MC_CONFIG_ROOT}/MC/config/PWGDQ/pythia8/generator/pythia8_inel_triggerGap.cfg");
     pythiaMBgen.readFile(pathconfigMB.Data());
     pythiaMBgen.readString("Random:setSeed on");
     pythiaMBgen.readString("Random:seed " + std::to_string(seed));
@@ -140,7 +139,7 @@ Pythia8::Event mOutputEvent;
   // Control gap-triggering
   unsigned long long mGeneratedEvents;
   int mInverseTriggerRatio;
-  Pythia pythiaMBgen; // minimum bias event  
+  Pythia8::Pythia pythiaMBgen; // minimum bias event  
   TString mConfigMBdecays;		
   int mPDG;
   std::vector<int> mHadronsPDGs;
@@ -165,7 +164,7 @@ FairGenerator*
   gen->setPDG(5);
   gen->setRapidityHadron(-1.5,1.5);
   gen->setHadronMultiplicity(1);
-  TString pathO2table = gSystem->ExpandPathName("$O2DPG_ROOT/MC/config/PWGDQ/pythia8/decayer/switchOffBhadrons.cfg");
+  TString pathO2table = gSystem->ExpandPathName("${O2DPG_MC_CONFIG_ROOT}/MC/config/PWGDQ/pythia8/decayer/switchOffBhadrons.cfg");
   gen->readFile(pathO2table.Data());
   gen->setConfigMBdecays(pathO2table);
   gen->setVerbose(verbose);
@@ -203,7 +202,7 @@ FairGenerator*
   gen->setPDG(5);
   gen->setRapidityHadron(rapidityMin,rapidityMax);
   gen->setHadronMultiplicity(1);
-  TString pathO2table = gSystem->ExpandPathName("$O2DPG_ROOT/MC/config/PWGDQ/pythia8/decayer/switchOffBhadrons.cfg");
+  TString pathO2table = gSystem->ExpandPathName("${O2DPG_MC_CONFIG_ROOT}/MC/config/PWGDQ/pythia8/decayer/switchOffBhadrons.cfg");
   gen->readFile(pathO2table.Data());
   gen->setConfigMBdecays(pathO2table);
   gen->setVerbose(verbose);
@@ -234,18 +233,18 @@ FairGenerator*
 }
 
 FairGenerator*
-  GeneratorBplusToJpsiKaon_EvtGen(double rapidityMin = -1.5, double rapidityMax = 1.5, bool verbose = false, TString pdgs = "521")
+  GeneratorBplusToJpsiKaon_EvtGen(double rapidityMin = -1.5, double rapidityMax = 1.5, bool verbose = false, TString pdgs = "511;521;531;541;5112;5122;5232;5132;5332")
 {
   auto gen = new o2::eventgen::GeneratorEvtGen<o2::eventgen::GeneratorPythia8NonPromptInjectedGapTriggeredDQ>();
   gen->setRapidity(rapidityMin, rapidityMax);
   gen->setPDG(5);
-  gen->addHadronPDGs(521);
+  //gen->addHadronPDGs(521);
   gen->setRapidityHadron(rapidityMin,rapidityMax);
   gen->setHadronMultiplicity(2);
-  TString pathO2table = gSystem->ExpandPathName("$O2DPG_ROOT/MC/config/PWGDQ/pythia8/decayer/switchOffBplus.cfg");
+  TString pathO2table = gSystem->ExpandPathName("${O2DPG_MC_CONFIG_ROOT}/MC/config/PWGDQ/pythia8/decayer/switchOffBhadrons.cfg");
   gen->readFile(pathO2table.Data());
   gen->setConfigMBdecays(pathO2table); 
-  gen->setVerbose(verbose);
+  gen->setVerbose(true);
   
   std::string spdg;
   TObjArray* obj = pdgs.Tokenize(";");
@@ -257,9 +256,10 @@ FairGenerator*
     printf("PDG %d \n", std::stoi(spdg));
   }
   
-  TString pathO2 = gSystem->ExpandPathName("$O2DPG_ROOT/MC/config/PWGDQ/EvtGen/DecayTablesEvtgen");
+  TString pathO2 = gSystem->ExpandPathName("${O2DPG_MC_CONFIG_ROOT}/MC/config/PWGDQ/EvtGen/DecayTablesEvtgen");
   //gen->SetDecayTable(Form("%s/BPLUSTOKAONJPSITOELE.DEC", pathO2.Data()));
-  gen->SetDecayTable(Form("%s/BPLUSTOKAONJPSITOELEALLMODES.DEC", pathO2.Data())); // decay table including decay modes for correlated background
+  //gen->SetDecayTable(Form("%s/BPLUSTOKAONJPSITOELEALLMODES.DEC", pathO2.Data())); // decay table including decay modes for correlated background
+  gen->SetDecayTable(Form("%s/BTOJPSITOELE.DEC", pathO2.Data())); // decay table including decay modes for correlated background
   // print debug
   // gen->PrintDebug();
   // set random seed
@@ -282,7 +282,7 @@ FairGenerator*
   gen->setPDG(5);
   gen->setRapidityHadron(rapidityMin,rapidityMax);
   gen->setHadronMultiplicity(1);
-  TString pathO2table = gSystem->ExpandPathName("$O2DPG_ROOT/MC/config/PWGDQ/pythia8/decayer/switchOffBhadrons.cfg");
+  TString pathO2table = gSystem->ExpandPathName("${O2DPG_MC_CONFIG_ROOT}/MC/config/PWGDQ/pythia8/decayer/switchOffBhadrons.cfg");
   gen->readFile(pathO2table.Data());
   gen->setConfigMBdecays(pathO2table);
   gen->setVerbose(verbose);
@@ -321,7 +321,7 @@ FairGenerator*
   gen->setPDG(5);
   gen->setRapidityHadron(rapidityMin,rapidityMax);
   gen->setHadronMultiplicity(1);
-  TString pathO2table = gSystem->ExpandPathName("$O2DPG_ROOT/MC/config/PWGDQ/pythia8/decayer/switchOffBhadrons.cfg");
+  TString pathO2table = gSystem->ExpandPathName("${O2DPG_MC_CONFIG_ROOT}/MC/config/PWGDQ/pythia8/decayer/switchOffBhadrons.cfg");
   gen->readFile(pathO2table.Data());
   gen->setConfigMBdecays(pathO2table);
   gen->setVerbose(verbose);
